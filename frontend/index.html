@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Disaster Recovery DApp</title>
+  <script src="https://cdn.jsdelivr.net/npm/web3/dist/web3.min.js"></script>
+</head>
+<body>
+  <h2>Disaster Recovery Training DApp</h2>
+
+
+  <h3>Participant Registration</h3>
+  <input id="participant_name" type="text" placeholder="Name" />
+  <input id="participant_age" type="number" placeholder="Age" />
+  <input id="participant_gender" type="text" placeholder="Gender" />
+  <input id="participant_district" type="text" placeholder="District" />
+  <select id="participant_interest">
+    <option value="1">first_aid</option>
+    <option value="2">shelter_rebuild</option>
+    <option value="3">food_safety</option>
+  </select>
+  <button onclick="registerAsParticipant()">Register as Participant</button>
+
+
+  <h3>Admin and Trainer Registration</h3>
+  <button onclick="registerAsAdmin()">Register as Admin</button>
+  <button onclick="registerAsTrainer()">Register as Trainer</button>
+
+
+  <p id="output" style="margin-top:20px; font-weight:bold;"></p>
+
+  <h3>Book Training Slot</h3>
+  <label for="trainer_address">Trainer Address:</label>
+  <input id="trainer_address" type="text" placeholder="0x..." size="42" />
+
+  <label for="slot_index">Training Slot (1-6):</label>
+  <input id="slot_index" type="number" min="1" max="6" />
+
+  <button onclick="bookTrainingSlot()">Book Slot</button>
+
+  <p id="booking_output" style="font-weight:bold;"></p>
+
+  <h3>Trainers and Their Schedules</h3>
+  <div id="trainers_list"></div>
+
+
+  <script>
+    let web3;
+    let contract;
+    let account;
+
+
+    const contractABI = [
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "admin",
+          "type": "address"
+        }
+      ],
+      "name": "AdminRegistered",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "participant",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "field",
+          "type": "string"
+        }
+      ],
+      "name": "DataUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "participant",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
+      "name": "ParticipantRegistered",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "trainer",
+          "type": "address"
+        }
+      ],
+      "name": "TrainerRegistered",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "participant",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "trainer",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "slot",
+          "type": "uint8"
+        }
+      ],
+      "name": "TrainingBooked",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "BOOKING_FEE",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function",
+      "constant": true
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "admins",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function",
+      "constant": true
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "participants",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "age",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "gender",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "district",
+          "type": "string"
+        },
+        {
+          "internalType": "enum DisasterTraining.TrainingInterest",
+          "name": "training_interest",
+          "type": "uint8"
+        },
+        {
+          "internalType": "bool",
+          "name": "has_completed_training",
+          "type": "bool"
+        },
+        {
+          "internalType": "address",
+          "name": "wallet",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function",
+      "constant": true
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "trainers",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function",
+      "constant": true
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "userRoles",
+      "outputs": [
+        {
+          "internalType": "enum DisasterTraining.UserRole",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function",
+      "constant": true
+    },
+    {
+      "inputs": [],
+      "name": "registerAsAdmin",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "registerAsTrainer",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "_name",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_age",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "_gender",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "_district",
+          "type": "string"
+        },
+        {
+          "internalType": "uint8",
+          "name": "_interest",
+          "type": "uint8"
+        }
+      ],
+      "name": "registerAsParticipant",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getTrainersLength",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function",
+      "constant": true
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "participantAddr",
+          "type": "address"
+        },
+        {
+          "internalType": "uint8",
+          "name": "newInterest",
+          "type": "uint8"
+        },
+        {
+          "internalType": "bool",
+          "name": "setCompleted",
+          "type": "bool"
+        }
+      ],
+      "name": "updateParticipant",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "trainer",
+          "type": "address"
+        },
+        {
+          "internalType": "uint8",
+          "name": "slotIndex",
+          "type": "uint8"
+        }
+      ],
+      "name": "bookTrainingSlot",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function",
+      "payable": true
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "trainer",
+          "type": "address"
+        }
+      ],
+      "name": "viewTrainerSchedule",
+      "outputs": [
+        {
+          "internalType": "address[6]",
+          "name": "",
+          "type": "address[6]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function",
+      "constant": true
+    }
+    ];
+
+
+    const contractAddress = "0x03e19Dec791436C149a8494D72E16939FC7D1893"; 
+
+
+    window.addEventListener('load', async () => {
+      if (window.ethereum) {
+        web3 = new Web3(window.ethereum);
+        try {
+          await window.ethereum.request({ method: 'eth_requestAccounts' });
+          const accounts = await web3.eth.getAccounts();
+          account = accounts[0];
+          contract = new web3.eth.Contract(contractABI, contractAddress);
+          document.getElementById('output').innerText = `Connected account: ${account}`;
+          if (contract) {
+            loadTrainersAndSchedules();
+          }
+
+        } catch (error) {
+          alert("User denied account access");
+        }
+      } else {
+        alert("Please install MetaMask!");
+      }
+    });
+
+
+    async function registerAsAdmin() {
+      try {
+        await contract.methods.registerAsAdmin().send({ from: account });
+        document.getElementById('output').innerText = "Registered as Admin successfully!";
+      } catch (err) {
+        document.getElementById('output').innerText = "Error: " + err.message;
+      }
+    }
+
+
+    async function registerAsTrainer() {
+      try {
+        await contract.methods.registerAsTrainer().send({ from: account });
+        document.getElementById('output').innerText = "Registered as Trainer successfully!";
+      } catch (err) {
+        document.getElementById('output').innerText = "Error: " + err.message;
+      }
+    }
+
+
+    async function registerAsParticipant() {
+    if (!contract) {
+        alert("Contract is not initialized");
+        return;
+    }
+
+    const name = document.getElementById('participant_name').value;
+    const age = parseInt(document.getElementById('participant_age').value);
+    const gender = document.getElementById('participant_gender').value;
+    const district = document.getElementById('participant_district').value;
+    const interest = parseInt(document.getElementById('participant_interest').value);
+
+    if (!name || !age || !gender || !district || !interest) {
+        document.getElementById('output').innerText = "Please fill in all required fields.";
+        return;
+    }
+
+    try {
+        await contract.methods.registerAsParticipant(name, age, gender, district, interest).send({ from: account });
+        document.getElementById('output').innerText = "Registered as Participant successfully!";
+    } catch (err) {
+        document.getElementById('output').innerText = "Error: " + err.message;
+    }
+    }
+
+    async function bookTrainingSlot() {
+    const trainer = document.getElementById('trainer_address').value.trim();
+    const slotStr = document.getElementById('slot_index').value.trim();
+    const slotIndex = parseInt(slotStr);
+
+    if (!web3.utils.isAddress(trainer)) {
+        document.getElementById('booking_output').innerText = "Invalid trainer address.";
+        return;
+    }
+    if (![1, 2, 3, 4, 5, 6].includes(slotIndex)) {
+        document.getElementById('booking_output').innerText = "Slot must be a number between 1 and 6.";
+        return;
+    }
+
+    try {
+        // Get booking fee from contract
+        const bookingFee = await contract.methods.BOOKING_FEE().call();
+    
+        await contract.methods.bookTrainingSlot(trainer, slotIndex).send({ 
+        from: account, 
+        value: bookingFee 
+        });
+        document.getElementById('booking_output').innerText = "Training slot booked successfully!";
+    } catch (err) {
+        document.getElementById('booking_output').innerText = "Error: " + err.message;
+    }
+    }
+
+    // Fetch and display all registered trainers and their schedules
+async function loadTrainersAndSchedules() {
+  const trainersDiv = document.getElementById('trainers_list');
+  trainersDiv.innerHTML = "Loading trainers...";
+
+  try {
+    
+    const trainersCount = await contract.methods.trainers.length().call().catch(() => null); // fallback if you don't have adminsLength
+
+  
+    if (!trainersCount) {
+      trainersDiv.innerText = "Unable to load trainers count.";
+      return;
+    }
+
+    let trainersHTML = "";
+
+    for (let i = 0; i < trainersCount; i++) {
+      const trainerAddress = await contract.methods.trainers(i).call();
+
+      trainersHTML += `<div style="margin-bottom:20px;">
+        <b>Trainer:</b> ${trainerAddress}
+        <br/>
+        <button onclick="showTrainerSchedule('${trainerAddress}', ${i})">View Schedule</button>
+        <div id="schedule_${i}"></div>
+      </div>`;
+    }
+
+    trainersDiv.innerHTML = trainersHTML;
+  } catch (error) {
+    trainersDiv.innerText = "Error loading trainers: " + error.message;
+  }
+}
+
+// Show schedule of a specific trainer: 6 slots
+async function showTrainerSchedule(trainerAddress, idx) {
+  const scheduleDiv = document.getElementById(`schedule_${idx}`);
+  scheduleDiv.innerHTML = "Loading schedule...";
+
+  try {
+    const schedule = await contract.methods.viewTrainerSchedule(trainerAddress).call();
+
+    let scheduleHTML = "<ol>";
+
+    for (let i = 0; i < schedule.length; i++) {
+      scheduleHTML += `<li>Slot ${i+1}: ${schedule[i] === '0x0000000000000000000000000000000000000000' ? "Available" : schedule[i]}</li>`;
+    }
+
+    scheduleHTML += "</ol>";
+
+    scheduleDiv.innerHTML = scheduleHTML;
+  } catch (error) {
+    scheduleDiv.innerHTML = "Error loading schedule: " + error.message;
+  }
+}
+
+  </script>
+</body>
+</html>
