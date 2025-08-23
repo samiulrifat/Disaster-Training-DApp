@@ -35,8 +35,11 @@ contract DisasterTraining {
     mapping(address => UserRole) public userRoles;
     address[] public admins;
     address[] public trainers;
+    address[] public participantAddresses;
+    mapping(string => uint) public districtParticipantCount;
     mapping(address => Participant) public participants;
     mapping(address => TrainerSchedule) private trainerSchedules;
+    mapping(address => string) private participantCertificates;
 
 
     event ParticipantRegistered(address participant, uint id);
@@ -44,6 +47,7 @@ contract DisasterTraining {
     event AdminRegistered(address admin);
     event DataUpdated(address participant, string field);
     event TrainingBooked(address participant, address trainer, uint8 slot);
+    event CertificateUploaded(address participant, string ipfsCID);
 
 
     modifier onlyAdmin() {
@@ -77,6 +81,7 @@ contract DisasterTraining {
     }
 
 
+    
     function registerAsParticipant(
         string calldata _name,
         uint _age,
@@ -84,10 +89,10 @@ contract DisasterTraining {
         string calldata _district,
         uint8 _interest
     ) external {
-        uint id = nextParticipantId++;
         require(userRoles[msg.sender] == UserRole.None, "Already registered");
         require(_interest >= 1 && _interest <= 3, "Invalid interest selected");
-       
+
+        uint id = nextParticipantId++;
         participants[msg.sender] = Participant({
             id: id,
             name: _name,
@@ -99,13 +104,23 @@ contract DisasterTraining {
             wallet: msg.sender
         });
         userRoles[msg.sender] = UserRole.Participant;
+
+        participantAddresses.push(msg.sender);
+
+        // Update district count
+        districtParticipantCount[_district]++;
+
         emit ParticipantRegistered(msg.sender, id);
     }
+
 
     function getTrainersLength() public view returns (uint) {
     return trainers.length;
     }
 
+    function getTotalParticipants() public view returns (uint) {
+    return participantAddresses.length;
+    }
 
     // Admin can update certain fields
     function updateParticipant(
@@ -129,6 +144,18 @@ contract DisasterTraining {
             require(!setCompleted, "Completion cannot be reverted");
         }
     }
+
+    function setCertificate(address participantAddr, string calldata ipfsCID) external onlyAdmin {
+    require(userRoles[participantAddr] == UserRole.Participant, "Not a participant");
+    participantCertificates[participantAddr] = ipfsCID;
+    emit CertificateUploaded(participantAddr, ipfsCID);
+    }
+
+    // Anyone can get the certificate CID
+    function getCertificate(address participantAddr) external view returns (string memory) {
+        return participantCertificates[participantAddr];
+    }
+
 
 
     // Book a training slot with a trainer

@@ -42,6 +42,39 @@
   <h3>Trainers and Their Schedules</h3>
   <div id="trainers_list"></div>
 
+  <h3>Update Participant Data (Admin Only)</h3>
+
+  <label for="participant_address">Participant Address:</label>
+  <input id="participant_address" type="text" placeholder="0x..." size="42" />
+
+  <label for="new_interest">New Training Interest:</label>
+  <select id="new_interest">
+    <option value="0">--Select--</option>
+    <option value="1">First Aid</option>
+    <option value="2">Shelter Rebuild</option>
+    <option value="3">Food Safety</option>
+  </select>
+
+  <label for="set_completed">Mark Training Completed:</label>
+  <input id="set_completed" type="checkbox" />
+
+  <button onclick="updateParticipantData()">Update Participant</button>
+
+  <p id="update_output" style="font-weight:bold;"></p>
+
+  <h3>Search Participants By District</h3>
+  <input id="search_district" type="text" placeholder="Enter district" />
+  <button onclick="searchParticipants()">Search</button>
+  <div id="search_output"></div>
+
+  <h3>Upload Certificate (Admin Only)</h3>
+  <input type="text" id="participant_address_cert" placeholder="Participant Address" size="42" />
+  <input type="file" id="certificate_file" />
+  <button onclick="uploadAndSetCertificate()">Upload & Link Certificate</button>
+  <p id="certificate_output"></p>
+
+  <button onclick="viewCertificate()">View Certificate</button>
+
 
   <script>
     let web3;
@@ -391,10 +424,10 @@
       "type": "function",
       "constant": true
     }
-    ];
+  ];
 
 
-    const contractAddress = "0x03e19Dec791436C149a8494D72E16939FC7D1893"; 
+    const contractAddress = "0x3d50C3a292Bc30D99aA4f97149683e6F01dB5f0a"; 
 
 
     window.addEventListener('load', async () => {
@@ -499,7 +532,7 @@ async function loadTrainersAndSchedules() {
 
   try {
     
-    const trainersCount = await contract.methods.trainers.length().call().catch(() => null); // fallback if you don't have adminsLength
+    const trainersCount = await contract.methods.getTrainersLength().call()
 
   
     if (!trainersCount) {
@@ -548,6 +581,128 @@ async function showTrainerSchedule(trainerAddress, idx) {
   }
 }
 
+async function updateParticipantData() {
+  const participantAddress = document.getElementById('participant_address').value.trim();
+  const newInterest = parseInt(document.getElementById('new_interest').value);
+  const setCompleted = document.getElementById('set_completed').checked;
+
+  if (!web3.utils.isAddress(participantAddress)) {
+    document.getElementById('update_output').innerText = "Invalid participant address.";
+    return;
+  }
+
+  if (newInterest !== 0 && (newInterest < 1 || newInterest > 3)) {
+    document.getElementById('update_output').innerText = "Invalid training interest selected.";
+    return;
+  }
+
+  try {
+    await contract.methods.updateParticipant(participantAddress, newInterest, setCompleted)
+      .send({ from: account });
+    document.getElementById('update_output').innerText = "Participant data updated successfully!";
+  } catch (error) {
+    document.getElementById('update_output').innerText = "Error: " + error.message;
+  }
+}
+
+
+async function searchParticipantsByDistrict(searchDistrict) {
+  const total = await contract.methods.getTotalParticipants().call();
+  let participantsList = [];
+
+  for (let i = 0; i < total; i++) {
+    const addr = await contract.methods.participantAddresses(i).call();
+    const p = await contract.methods.participants(addr).call();
+    participantsList.push({ address: addr, district: p.district, name: p.name });
+  }
+
+  // Filter by district (case insensitive)
+  const filtered = participantsList.filter(p => 
+    p.district.toLowerCase() === searchDistrict.toLowerCase()
+  );
+
+  // Count participants per district
+  let counts = {};
+  participantsList.forEach(p => {
+    const d = p.district;
+    counts[d] = counts[d] ? counts[d] + 1 : 1;
+  });
+
+  // Sort districts by count descending
+  let sortedDistricts = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  
+  // Display results
+  console.log("Participants in", searchDistrict, filtered.length);
+  console.log("Participants count per district:");
+  sortedDistricts.forEach(d => console.log(d, counts[d]));
+
+}
+
+async function searchParticipants() {
+  const district = document.getElementById('search_district').value.trim();
+  if (!district) {
+    alert("Please enter a district");
+    return;
+  }
+  await searchParticipantsByDistrict(district);
+}
+
+async function uploadAndSetCertificate() {
+  const participantAddress = document.getElementById('participant_address_cert').value.trim();
+  const fileInput = document.getElementById('certificate_file');
+  if (!web3.utils.isAddress(participantAddress)) {
+    document.getElementById('certificate_output').innerText = 'Invalid participant address.';
+    return;
+  }
+  if (fileInput.files.length === 0) {
+    document.getElementById('certificate_output').innerText = 'No file selected.';
+    return;
+  }
+
+  try {
+    const file = fileInput.files[0];
+    document.getElementById('certificate_output').innerText = 'Uploading to IPFS...';
+    const cid = await uploadCertificate(file);  // Use IPFS client upload
+    document.getElementById('certificate_output').innerText = `Uploaded to IPFS: ${cid}. Sending transaction...`;
+
+    await contract.methods.setCertificate(participantAddress, cid)
+      .send({ from: account });
+
+    document.getElementById('certificate_output').innerText = 'Certificate linked successfully!';
+  } catch (err) {
+    document.getElementById('certificate_output').innerText = 'Error: ' + err.message;
+  }
+}
+
+async function viewCertificate() {
+  const participantAddress = document.getElementById('participant_address_cert').value.trim();
+  if (!web3.utils.isAddress(participantAddress)) {
+    alert('Invalid participant address.');
+    return;
+  }
+  const cid = await contract.methods.getCertificate(participantAddress).call();
+  if (cid) {
+    const url = `https://ipfs.io/ipfs/${cid}`;
+    window.open(url, '_blank');
+  } else {
+    alert('No certificate found for this participant.');
+  }
+}
+
+
   </script>
+
+  <script type="module">
+  import { create } from 'https://unpkg.com/ipfs-http-client@59.0.0/dist/index.min.js';
+
+  const ipfs = create({ url: 'https://ipfs.infura.io:5001/api/v0' });
+
+  window.uploadCertificate = async function(file) {
+      const added = await ipfs.add(file);
+      return added.path;
+  }
+  
+  </script>
+
 </body>
 </html>
