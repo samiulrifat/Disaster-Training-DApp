@@ -39,11 +39,12 @@
 
   <p id="booking_output" style="font-weight:bold;"></p>
 
-  <h3>Trainers and Their Schedules</h3>
-  <div id="trainers_list"></div>
+  <h3>View Trainer Schedule</h3>
+  <input id="view_schedule_address" type="text" placeholder="Enter Trainer Address (0x...)" size="42" />
+  <button onclick="viewTrainerScheduleBox()">View Schedule</button>
+  <div id="view_schedule_output"></div>
 
   <h3>Update Participant Data (Admin Only)</h3>
-
   <label for="participant_address">Participant Address:</label>
   <input id="participant_address" type="text" placeholder="0x..." size="42" />
 
@@ -94,6 +95,25 @@
         }
       ],
       "name": "AdminRegistered",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "participant",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "ipfsCID",
+          "type": "string"
+        }
+      ],
+      "name": "CertificateUploaded",
       "type": "event"
     },
     {
@@ -195,6 +215,46 @@
         }
       ],
       "name": "admins",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function",
+      "constant": true
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "name": "districtParticipantCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function",
+      "constant": true
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "participantAddresses",
       "outputs": [
         {
           "internalType": "address",
@@ -363,6 +423,20 @@
       "constant": true
     },
     {
+      "inputs": [],
+      "name": "getTotalParticipants",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function",
+      "constant": true
+    },
+    {
       "inputs": [
         {
           "internalType": "address",
@@ -384,6 +458,44 @@
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "participantAddr",
+          "type": "address"
+        },
+        {
+          "internalType": "string",
+          "name": "ipfsCID",
+          "type": "string"
+        }
+      ],
+      "name": "setCertificate",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "participantAddr",
+          "type": "address"
+        }
+      ],
+      "name": "getCertificate",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function",
+      "constant": true
     },
     {
       "inputs": [
@@ -426,10 +538,8 @@
     }
   ];
 
-
-    const contractAddress = "0x3d50C3a292Bc30D99aA4f97149683e6F01dB5f0a"; 
-
-
+    const contractAddress = "0xCFb78AC708777090359fD9377f0A9a4F06E10d11"; 
+    
     window.addEventListener('load', async () => {
       if (window.ethereum) {
         web3 = new Web3(window.ethereum);
@@ -439,9 +549,9 @@
           account = accounts[0];
           contract = new web3.eth.Contract(contractABI, contractAddress);
           document.getElementById('output').innerText = `Connected account: ${account}`;
-          if (contract) {
-            loadTrainersAndSchedules();
-          }
+          // if (contract) {
+          //   loadTrainersAndSchedules();
+          // }
 
         } catch (error) {
           alert("User denied account access");
@@ -525,169 +635,146 @@
     }
     }
 
-    // Fetch and display all registered trainers and their schedules
-async function loadTrainersAndSchedules() {
-  const trainersDiv = document.getElementById('trainers_list');
-  trainersDiv.innerHTML = "Loading trainers...";
+    async function viewTrainerScheduleBox() {
+    const trainerAddress = document.getElementById('view_schedule_address').value.trim();
+    const outputDiv = document.getElementById('view_schedule_output');
+    outputDiv.innerHTML = "Loading schedule...";
 
-  try {
-    
-    const trainersCount = await contract.methods.getTrainersLength().call()
-
-  
-    if (!trainersCount) {
-      trainersDiv.innerText = "Unable to load trainers count.";
+    if (!web3.utils.isAddress(trainerAddress)) {
+      outputDiv.innerHTML = "Invalid trainer address.";
       return;
     }
 
-    let trainersHTML = "";
+    try {
+      const role = await contract.methods.userRoles(trainerAddress).call();
+      if (parseInt(role) !== 2) { // 2 means Trainer
+        outputDiv.innerHTML = "This address is not registered as a Trainer.";
+        return;
+      }
 
-    for (let i = 0; i < trainersCount; i++) {
-      const trainerAddress = await contract.methods.trainers(i).call();
+      const schedule = await contract.methods.viewTrainerSchedule(trainerAddress).call();
+      let html = "<ol>";
+      for (let i = 0; i < schedule.length; i++) {
+        html += `<li>Slot ${i+1}: ${
+          schedule[i] === '0x0000000000000000000000000000000000000000' 
+          ? "Available" : schedule[i]
+        }</li>`;
+      }
+      html += "</ol>";
+      outputDiv.innerHTML = html;
+    } catch (err) {
+      outputDiv.innerHTML = "Error loading schedule: " + err.message;
+    }
+  }
+   
 
-      trainersHTML += `<div style="margin-bottom:20px;">
-        <b>Trainer:</b> ${trainerAddress}
-        <br/>
-        <button onclick="showTrainerSchedule('${trainerAddress}', ${i})">View Schedule</button>
-        <div id="schedule_${i}"></div>
-      </div>`;
+  async function updateParticipantData() {
+    const participantAddress = document.getElementById('participant_address').value.trim();
+    const newInterest = parseInt(document.getElementById('new_interest').value);
+    const setCompleted = document.getElementById('set_completed').checked;
+
+    if (!web3.utils.isAddress(participantAddress)) {
+      document.getElementById('update_output').innerText = "Invalid participant address.";
+      return;
     }
 
-    trainersDiv.innerHTML = trainersHTML;
-  } catch (error) {
-    trainersDiv.innerText = "Error loading trainers: " + error.message;
-  }
-}
-
-// Show schedule of a specific trainer: 6 slots
-async function showTrainerSchedule(trainerAddress, idx) {
-  const scheduleDiv = document.getElementById(`schedule_${idx}`);
-  scheduleDiv.innerHTML = "Loading schedule...";
-
-  try {
-    const schedule = await contract.methods.viewTrainerSchedule(trainerAddress).call();
-
-    let scheduleHTML = "<ol>";
-
-    for (let i = 0; i < schedule.length; i++) {
-      scheduleHTML += `<li>Slot ${i+1}: ${schedule[i] === '0x0000000000000000000000000000000000000000' ? "Available" : schedule[i]}</li>`;
+    if (newInterest !== 0 && (newInterest < 1 || newInterest > 3)) {
+      document.getElementById('update_output').innerText = "Invalid training interest selected.";
+      return;
     }
 
-    scheduleHTML += "</ol>";
-
-    scheduleDiv.innerHTML = scheduleHTML;
-  } catch (error) {
-    scheduleDiv.innerHTML = "Error loading schedule: " + error.message;
-  }
-}
-
-async function updateParticipantData() {
-  const participantAddress = document.getElementById('participant_address').value.trim();
-  const newInterest = parseInt(document.getElementById('new_interest').value);
-  const setCompleted = document.getElementById('set_completed').checked;
-
-  if (!web3.utils.isAddress(participantAddress)) {
-    document.getElementById('update_output').innerText = "Invalid participant address.";
-    return;
+    try {
+      await contract.methods.updateParticipant(participantAddress, newInterest, setCompleted)
+        .send({ from: account });
+      document.getElementById('update_output').innerText = "Participant data updated successfully!";
+    } catch (error) {
+      document.getElementById('update_output').innerText = "Error: " + error.message;
+    }
   }
 
-  if (newInterest !== 0 && (newInterest < 1 || newInterest > 3)) {
-    document.getElementById('update_output').innerText = "Invalid training interest selected.";
-    return;
+
+  async function searchParticipantsByDistrict(searchDistrict) {
+    const total = await contract.methods.getTotalParticipants().call();
+    let participantsList = [];
+
+    for (let i = 0; i < total; i++) {
+      const addr = await contract.methods.participantAddresses(i).call();
+      const p = await contract.methods.participants(addr).call();
+      participantsList.push({ address: addr, district: p.district, name: p.name });
+    }
+
+    // Filter by district (case insensitive)
+    const filtered = participantsList.filter(p => 
+      p.district.toLowerCase() === searchDistrict.toLowerCase()
+    );
+
+    // Count participants per district
+    let counts = {};
+    participantsList.forEach(p => {
+      const d = p.district;
+      counts[d] = counts[d] ? counts[d] + 1 : 1;
+    });
+
+    // Sort districts by count descending
+    let sortedDistricts = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+    
+    // Display results
+    console.log("Participants in", searchDistrict, filtered.length);
+    console.log("Participants count per district:");
+    sortedDistricts.forEach(d => console.log(d, counts[d]));
+
   }
 
-  try {
-    await contract.methods.updateParticipant(participantAddress, newInterest, setCompleted)
-      .send({ from: account });
-    document.getElementById('update_output').innerText = "Participant data updated successfully!";
-  } catch (error) {
-    document.getElementById('update_output').innerText = "Error: " + error.message;
-  }
-}
-
-
-async function searchParticipantsByDistrict(searchDistrict) {
-  const total = await contract.methods.getTotalParticipants().call();
-  let participantsList = [];
-
-  for (let i = 0; i < total; i++) {
-    const addr = await contract.methods.participantAddresses(i).call();
-    const p = await contract.methods.participants(addr).call();
-    participantsList.push({ address: addr, district: p.district, name: p.name });
+  async function searchParticipants() {
+    const district = document.getElementById('search_district').value.trim();
+    if (!district) {
+      alert("Please enter a district");
+      return;
+    }
+    await searchParticipantsByDistrict(district);
   }
 
-  // Filter by district (case insensitive)
-  const filtered = participantsList.filter(p => 
-    p.district.toLowerCase() === searchDistrict.toLowerCase()
-  );
+  async function uploadAndSetCertificate() {
+    const participantAddress = document.getElementById('participant_address_cert').value.trim();
+    const fileInput = document.getElementById('certificate_file');
+    if (!web3.utils.isAddress(participantAddress)) {
+      document.getElementById('certificate_output').innerText = 'Invalid participant address.';
+      return;
+    }
+    if (fileInput.files.length === 0) {
+      document.getElementById('certificate_output').innerText = 'No file selected.';
+      return;
+    }
 
-  // Count participants per district
-  let counts = {};
-  participantsList.forEach(p => {
-    const d = p.district;
-    counts[d] = counts[d] ? counts[d] + 1 : 1;
-  });
+    try {
+      const file = fileInput.files[0];
+      document.getElementById('certificate_output').innerText = 'Uploading to IPFS...';
+      const cid = await uploadCertificate(file);  // Use IPFS client upload
+      document.getElementById('certificate_output').innerText = `Uploaded to IPFS: ${cid}. Sending transaction...`;
 
-  // Sort districts by count descending
-  let sortedDistricts = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
-  
-  // Display results
-  console.log("Participants in", searchDistrict, filtered.length);
-  console.log("Participants count per district:");
-  sortedDistricts.forEach(d => console.log(d, counts[d]));
+      await contract.methods.setCertificate(participantAddress, cid)
+        .send({ from: account });
 
-}
-
-async function searchParticipants() {
-  const district = document.getElementById('search_district').value.trim();
-  if (!district) {
-    alert("Please enter a district");
-    return;
-  }
-  await searchParticipantsByDistrict(district);
-}
-
-async function uploadAndSetCertificate() {
-  const participantAddress = document.getElementById('participant_address_cert').value.trim();
-  const fileInput = document.getElementById('certificate_file');
-  if (!web3.utils.isAddress(participantAddress)) {
-    document.getElementById('certificate_output').innerText = 'Invalid participant address.';
-    return;
-  }
-  if (fileInput.files.length === 0) {
-    document.getElementById('certificate_output').innerText = 'No file selected.';
-    return;
+      document.getElementById('certificate_output').innerText = 'Certificate linked successfully!';
+    } catch (err) {
+      document.getElementById('certificate_output').innerText = 'Error: ' + err.message;
+    }
   }
 
-  try {
-    const file = fileInput.files[0];
-    document.getElementById('certificate_output').innerText = 'Uploading to IPFS...';
-    const cid = await uploadCertificate(file);  // Use IPFS client upload
-    document.getElementById('certificate_output').innerText = `Uploaded to IPFS: ${cid}. Sending transaction...`;
-
-    await contract.methods.setCertificate(participantAddress, cid)
-      .send({ from: account });
-
-    document.getElementById('certificate_output').innerText = 'Certificate linked successfully!';
-  } catch (err) {
-    document.getElementById('certificate_output').innerText = 'Error: ' + err.message;
+  async function viewCertificate() {
+    const participantAddress = document.getElementById('participant_address_cert').value.trim();
+    if (!web3.utils.isAddress(participantAddress)) {
+      alert('Invalid participant address.');
+      return;
+    }
+    const cid = await contract.methods.getCertificate(participantAddress).call();
+    if (cid) {
+      const url = `https://ipfs.io/ipfs/${cid}`;
+      window.open(url, '_blank');
+    } else {
+      alert('No certificate found for this participant.');
+    }
   }
-}
-
-async function viewCertificate() {
-  const participantAddress = document.getElementById('participant_address_cert').value.trim();
-  if (!web3.utils.isAddress(participantAddress)) {
-    alert('Invalid participant address.');
-    return;
-  }
-  const cid = await contract.methods.getCertificate(participantAddress).call();
-  if (cid) {
-    const url = `https://ipfs.io/ipfs/${cid}`;
-    window.open(url, '_blank');
-  } else {
-    alert('No certificate found for this participant.');
-  }
-}
 
 
   </script>
