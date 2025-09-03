@@ -538,7 +538,7 @@
     }
   ];
 
-    const contractAddress = "0xCFb78AC708777090359fD9377f0A9a4F06E10d11"; 
+    const contractAddress = "0x0cCF67423a7254a7F0F1aB3F4ef5576116fC0533"; 
     
     window.addEventListener('load', async () => {
       if (window.ethereum) {
@@ -549,9 +549,6 @@
           account = accounts[0];
           contract = new web3.eth.Contract(contractABI, contractAddress);
           document.getElementById('output').innerText = `Connected account: ${account}`;
-          // if (contract) {
-          //   loadTrainersAndSchedules();
-          // }
 
         } catch (error) {
           alert("User denied account access");
@@ -608,31 +605,41 @@
     }
 
     async function bookTrainingSlot() {
-    const trainer = document.getElementById('trainer_address').value.trim();
-    const slotStr = document.getElementById('slot_index').value.trim();
-    const slotIndex = parseInt(slotStr);
+      const trainer = document.getElementById('trainer_address').value.trim();
+      const slotStr = document.getElementById('slot_index').value.trim();
+      const slotIndex = parseInt(slotStr);
 
-    if (!web3.utils.isAddress(trainer)) {
+      if (!web3.utils.isAddress(trainer)) {
         document.getElementById('booking_output').innerText = "Invalid trainer address.";
         return;
-    }
-    if (![1, 2, 3, 4, 5, 6].includes(slotIndex)) {
+      }
+      if (![1, 2, 3, 4, 5, 6].includes(slotIndex)) {
         document.getElementById('booking_output').innerText = "Slot must be a number between 1 and 6.";
         return;
-    }
+      }
 
-    try {
-        // Get booking fee from contract
+      try {
         const bookingFee = await contract.methods.BOOKING_FEE().call();
-    
-        await contract.methods.bookTrainingSlot(trainer, slotIndex).send({ 
-        from: account, 
-        value: bookingFee 
+        console.log("Booking fee (wei):", bookingFee);
+
+        const role = await contract.methods.userRoles(account).call();
+        console.log("Your role:", role); 
+
+        const trainerRole = await contract.methods.userRoles(trainer).call();
+        console.log("Trainer role:", trainerRole); 
+
+        await contract.methods.bookTrainingSlot(trainer, slotIndex).send({
+          from: account,
+          value: bookingFee
         });
+
         document.getElementById('booking_output').innerText = "Training slot booked successfully!";
-    } catch (err) {
-        document.getElementById('booking_output').innerText = "Error: " + err.message;
-    }
+      } catch (err) {
+        console.error(err);
+       
+        const errorMessage = err.data && err.data.message ? err.data.message : err.message;
+        document.getElementById('booking_output').innerText = "Error: " + errorMessage;
+      }
     }
 
     async function viewTrainerScheduleBox() {
@@ -668,7 +675,7 @@
   }
    
 
-  async function updateParticipantData() {
+    async function updateParticipantData() {
     const participantAddress = document.getElementById('participant_address').value.trim();
     const newInterest = parseInt(document.getElementById('new_interest').value);
     const setCompleted = document.getElementById('set_completed').checked;
@@ -684,46 +691,70 @@
     }
 
     try {
+      // Optional: Verify admin role on contract
+      const adminRole = await contract.methods.userRoles(account).call();
+      console.log("Your role:", adminRole); 
+
+      const participantRole = await contract.methods.userRoles(participantAddress).call();
+      console.log("Participant role:", participantRole);
+
       await contract.methods.updateParticipant(participantAddress, newInterest, setCompleted)
         .send({ from: account });
+
       document.getElementById('update_output').innerText = "Participant data updated successfully!";
     } catch (error) {
-      document.getElementById('update_output').innerText = "Error: " + error.message;
+      console.error(error);
+      const errorMessage = error.data && error.data.message ? error.data.message : error.message;
+      document.getElementById('update_output').innerText = "Error: " + errorMessage;
     }
   }
+
+
+async function logCurrentUserRole() {
+  if (!account) {
+    console.log("No MetaMask account connected");
+    return;
+  }
+  const role = await contract.methods.userRoles(account).call();
+  console.log(`Role enum for ${account} is:`, role);
+  // Roles: 0 = None, 1 = Admin, 2 = Trainer, 3 = Participant
+}
 
 
   async function searchParticipantsByDistrict(searchDistrict) {
-    const total = await contract.methods.getTotalParticipants().call();
-    let participantsList = [];
+  const total = await contract.methods.getTotalParticipants().call();
+  let participantsList = [];
 
-    for (let i = 0; i < total; i++) {
-      const addr = await contract.methods.participantAddresses(i).call();
-      const p = await contract.methods.participants(addr).call();
-      participantsList.push({ address: addr, district: p.district, name: p.name });
-    }
-
-    // Filter by district (case insensitive)
-    const filtered = participantsList.filter(p => 
-      p.district.toLowerCase() === searchDistrict.toLowerCase()
-    );
-
-    // Count participants per district
-    let counts = {};
-    participantsList.forEach(p => {
-      const d = p.district;
-      counts[d] = counts[d] ? counts[d] + 1 : 1;
-    });
-
-    // Sort districts by count descending
-    let sortedDistricts = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
-    
-    // Display results
-    console.log("Participants in", searchDistrict, filtered.length);
-    console.log("Participants count per district:");
-    sortedDistricts.forEach(d => console.log(d, counts[d]));
-
+  for (let i = 0; i < total; i++) {
+    const addr = await contract.methods.participantAddresses(i).call();
+    const p = await contract.methods.participants(addr).call();
+    participantsList.push({ address: addr, district: p.district, name: p.name });
   }
+
+  const filtered = participantsList.filter(p =>
+    p.district.toLowerCase() === searchDistrict.toLowerCase()
+  );
+  
+  let counts = {};
+  participantsList.forEach(p => {
+    const d = p.district;
+    counts[d] = counts[d] ? counts[d] + 1 : 1;
+  });
+
+  let sortedDistricts = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+
+  let html = `<h4>Participants in ${searchDistrict}: ${filtered.length}</h4>`;
+  html += `<h4>Participant Count Per District (sorted):</h4><ul>`;
+  for (let d of sortedDistricts) {
+    html += `<li>${d}: ${counts[d]}</li>`;
+  }
+  html += `</ul>`;
+
+  document.getElementById('search_output').innerHTML = html;
+
+  console.log("Participants in", searchDistrict, filtered.length);
+  console.log("Participants count per district:", counts);
+}
 
   async function searchParticipants() {
     const district = document.getElementById('search_district').value.trim();
